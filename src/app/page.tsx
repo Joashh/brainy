@@ -1,103 +1,197 @@
-import Image from "next/image";
+'use client';
+
+import dynamic from 'next/dynamic';
+import { useState, useContext, useEffect } from 'react';
+import TopBar from './components/topbar';
+import Dashboard from './components/dashboard';
+import { themecontext } from "./themecontext";
+import Footer from './components/footer';
+
+const WeatherMap = dynamic(() => import('./components/WeatherMap'), {
+  ssr: false,
+});
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  type ForecastItem = {
+    date: string;
+    avgTemp: string;
+    rainProb: string;
+  };
+  const [weather, setWeather] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { theme, setTheme } = useContext(themecontext);
+  const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY;
+  const [forecast, setForecast] = useState<ForecastItem[]>([]);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const fetchWeather = async (lat: number, lon: number) => {
+    try {
+      const res = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`
+      );
+
+      const data = await res.json();
+
+      const transformedWeather = {
+        city: data.name,
+        country: data.sys.country,
+        temperature: data.main.temp,
+        description: data.weather[0].description,
+        icon: data.weather[0].icon,
+        feels_like: data.main.feels_like,
+        temp_min: data.main.temp_min,
+        temp_max: data.main.temp_max,
+      };
+
+      setWeather(transformedWeather);
+    } catch (err) {
+      console.error('Weather fetch failed:', err);
+      setError('Failed to fetch weather data.');
+    }
+  };
+
+  // 🌤️ Fetch weather based on lat/lon
+  const fetchWeather2 = async (lat: number, lon: number) => {
+    try {
+      const res = await fetch(
+        `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`
+      );
+
+      const data = await res.json();
+
+      const dailyData = data.list.reduce((acc: any, item: any) => {
+        const date = item.dt_txt.split(" ")[0];
+        if (!acc[date]) acc[date] = [];
+        acc[date].push(item);
+        return acc;
+      }, {});
+
+
+      const summary = Object.entries(dailyData).slice(0, 5).map(([date, entries]: any) => {
+        const temps = entries.map((entry: any) => entry.main.temp);
+        const rainChances = entries.map((entry: any) => entry.pop ?? 0); // Probability of Precipitation (0–1)
+
+        return {
+          date,
+          avgTemp: (temps.reduce((a: number, b: number) => a + b, 0) / temps.length).toFixed(1),
+          rainProb: (Math.max(...rainChances) * 100).toFixed(0), // convert to %
+        };
+      });
+
+      setForecast(summary); // <== you must declare: const [forecast, setForecast] = useState([])
+    } catch (err) {
+      console.error('Forecast fetch failed:', err);
+      setError('Failed to fetch forecast.');
+    }
+  };
+  type CitySuggestion = {
+    name: string;
+    state?: string;
+    country: string;
+    lat: number;
+    lon: number;
+  };
+
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<CitySuggestion[]>([]);
+  const handleSearch = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setQuery(value);
+
+    if (value.length > 2) {
+      const res = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${value}&limit=5&appid=${process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY}`);
+      const data = await res.json();
+      setSuggestions(data); // array of matching cities
+    }
+  };
+
+  // 📍 Get location on first load
+  useEffect(() => {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          fetchWeather(position.coords.latitude, position.coords.longitude);
+          fetchWeather2(position.coords.latitude, position.coords.longitude);
+        },
+        () => {
+          setError('Location permission denied.');
+        }
+      );
+    } else {
+      setError('Geolocation not supported by this browser.');
+    }
+  }, []);
+
+  // 🌓 Theme toggler
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    document.documentElement.classList.toggle('dark', newTheme === 'dark');
+  };
+
+  return (
+    <>
+      {weather ? (
+        <div className='h-screen flex flex-col justify-between'>
+        <div
+          className="w-screen flex flex-col  gap-4 p-3 transition-colors"
+          data-theme={theme || 'light'}
+        >
+          <div className="flex justify-center">
+            <TopBar onSearchCurrent={fetchWeather} onSearchForecast={fetchWeather2} />
+          </div>
+
+          <div className="flex justify-center">
+            <Dashboard weather={weather} forecast={forecast} />
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+
+        
+        <Footer/>
+        </div>
+      ) : (
+        <div
+          className="h-screen w-screen flex flex-col justify-center gap-4 p-3 transition-colors"
+          data-theme={theme || 'light'}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          <div className="text-center text-[#5c4928] space-y-1">
+            <div className='flex items-center gap-x-3 flex-col'>
+              <img src="cloudy.png" alt="" className='h-25 w-25' />
+              <h1 className='font-extrabold text-black font-sans text-5xl '>B<span className="text-[#7a6034]">RAIN</span>Y</h1>
+            </div>
+            <p className='text-[#5c4928] text-md'>Check the weather and rain probability.</p>
+          </div>
+          <div className='relative flex justify-center'>
+             <input className='w-full md:w-1/3  bg-[#cfbfa3] rounded-full p-2 shadow-md text-black text-center' placeholder='Search city, address, country....' value={query}
+            onChange={handleSearch} />
+            <ul className="bg-[#e7dbc6] text-sm font-sans md:w-1/3  text-black rounded mt-4 shadow-md absolute top-full left-0 w-full text-center  left-1/2 transform -translate-x-1/2 ">
+              {suggestions.map((city, i) => (
+                <li
+                  key={i}
+                  className="p-2 cursor-pointer hover:bg-gray-200"
+                  onClick={() => {
+                    fetchWeather(city.lat, city.lon);
+                    fetchWeather2(city.lat, city.lon);
+                    setQuery(city.name);
+                    setSuggestions([]);
+                  }}
+                >
+                  {city.name}, {city.state ?? ''} {city.country}
+                </li>
+              ))}
+            </ul></div>
+
+          <div className="flex justify-center">
+           
+            <footer className="text-center py-4 text-xs  text-[#5c4928]">
+                © {new Date().getFullYear()} All rights reserved.
+               <p className='text-[#5c4928] text-xs '>Made by Joash </p>
+            </footer>
+
+          </div>
+        </div>
+      )}
+    </>
   );
+
 }
