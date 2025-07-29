@@ -1,4 +1,4 @@
-# 🌤️ Weather App
+# 🌤️ BRAINY Weather App
 
 ![Weather App Banner](./public/cloudy.png)
 
@@ -17,8 +17,8 @@ A simple and beautiful weather forecast application built with **Next.js**, **Re
 
 ## 🖼️ Preview
 
-![Screenshot](a.png)
-![Screenshot](b.png)
+![Screenshot](./a.png)
+![Screenshot](./b.png)
 
 ---
 
